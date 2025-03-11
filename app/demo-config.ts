@@ -854,11 +854,11 @@ export const demoConfig = async (userEmail) => {
       },
       // Using existing durable tool for fetchSlots by ID
       {
-        toolId: "029d7cd1-3f6d-4007-a5ce-d9135991cc7d" // Using the correct ID from example
+        toolId: "b12be5dc-46c7-41bc-be10-ef2eee906df8" // Using the correct ID from example
       },
       // Using existing durable tool for bookAppointment by ID
       {
-        toolId: "cce55539-8638-4b02-bf89-b4589ecd5914"
+        toolId: "9b4aac67-37d0-4f1d-888f-ead39702d206"
       }
     ];
     
