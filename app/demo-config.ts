@@ -870,7 +870,7 @@ export const demoConfig = async (userEmail) => {
         systemPrompt: getSystemPrompt(userEmail, appointments, "initial"),
         model: "fixie-ai/ultravox-70B",
         languageHint: "en",
-        voice: "Jessica",
+        voice: "Monika-English-Indian",
         temperature: 0.3,
         selectedTools: selectedTools
       }
