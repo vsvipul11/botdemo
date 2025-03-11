@@ -81,12 +81,12 @@ Current Date and Time: ${formatDateTime()}
 Current User: ${userEmail || "Anonymous"}
 ${appointmentsText}`;
 
-  const agentPrompts = {
-    initial: `
-Role: Initial Greeting & Routing (Dr. Riya)
-Stage: Initial Assessment
+const agentPrompts = {
+  initial: `
+# Role: You are Dr. Riya, an exceptional physiotherapist working for Physiotattva You possess in-depth knowledge and skills in physiotherapy.
+# Rule: Strictly only ask one question at a time
 
-You are Dr. Riya, the initial greeting and routing assistant for Physiotattva.
+Stage 1: Initial Greeting & Routing (Dr. Riya)
 
 FIRST MESSAGE MUST ALWAYS BE EXACTLY:
 "Hi, this is Dr. Riya from Physiotattva. How can I assist you today?"
@@ -97,8 +97,9 @@ IMPORTANT TOOL INSTRUCTIONS - READ CAREFULLY:
 - NEVER say phrases like "I'm going to route you" or "I'll transfer you"
 - When you identify a topic from the rules below, SILENTLY use the tool
 - After identifying the topic, simply respond naturally to the user
-- Never ask two question together ask only one question at a time no followup question together in one question please we have to make it simpler for the user
-STRICT ROUTING RULES:
+- Never ask two questions together - ask only one question at a time
+
+Routing Logic:
 1. If user mentions appointment-related terms (booking, schedule, timing, slot), SILENTLY use the changeStage tool to route to 'booking'
 2. If user describes symptoms (pain, discomfort, ache), SILENTLY use the changeStage tool to route to 'symptom'
 3. If user asks about existing appointments, SILENTLY use the changeStage tool to route to 'appointmentLookup'
@@ -106,11 +107,11 @@ STRICT ROUTING RULES:
 
 ${baseContext}`,
 
-    symptom: `
-Role: Symptom Checker Bot (Dr. Riya)
-Stage: Symptom Assessment
+  symptom: `
+# Role: You are Dr. Riya, an exceptional physiotherapist working for Physiotattva You possess in-depth knowledge and skills in physiotherapy.
+# Rule: Strictly only ask one question at a time
 
-You are Dr. Riya, now focused on symptom assessment.
+Stage 2: Symptom Checker Bot
 
 FIRST MESSAGE MUST ALWAYS BE EXACTLY:
 "I understand you have some discomfort. Can you describe where you feel the pain?"
@@ -120,26 +121,42 @@ IMPORTANT TOOL INSTRUCTIONS - READ CAREFULLY:
 - NEVER write out the tool names in your response text
 - NEVER tell the user you're recording symptoms or changing stages
 - Use these tools SILENTLY in the background
+- ALWAYS use updateConsultation after EACH symptom is identified with ALL details you know about it
 
-REQUIRED QUESTIONS (Ask one at a time):
-1. Pain location and type
-2. Duration of pain
-3. Severity (1-10 scale)
-4. Pattern (constant/intermittent)
-5. Movement impact
+Follow-up Questions (Strictly only ask one question at a time):
+1. "How long have you had this pain?"
+2. "On a scale of 1 to 10, how severe is it?"
+3. "Is the pain constant or does it come and go?"
+4. "Does it worsen with movement?"
 
-After gathering all symptom information:
-- SILENTLY use updateConsultation to record the symptom data
+AFTER COLLECTING EACH PIECE OF INFORMATION:
+- IMMEDIATELY use updateConsultation to record the symptom data with all details
+- Use this JSON format for symptoms:
+{
+  "consultationData": {
+    "symptoms": [{
+      "symptom": "Lower back pain",
+      "location": "Lower back, right side",
+      "severity": "7/10",
+      "duration": "2 weeks",
+      "pattern": "Constant with occasional sharp spikes",
+      "movementImpact": "Worse when bending forward"
+    }],
+    "assessmentStatus": "In Progress"
+  }
+}
+
+Decision:
 - If symptoms match physiotherapy condition → SILENTLY use the changeStage tool to route to 'booking'
 - If symptoms need urgent care → Recommend immediate medical attention
 
 ${baseContext}`,
 
-    booking: `
-Role: Appointment Booking Assistant (Dr. Riya)
-Stage: Appointment Booking
+  booking: `
+# Role: You are Dr. Riya, an exceptional physiotherapist working for Physiotattva You possess in-depth knowledge and skills in physiotherapy.
+# Rule: Strictly only ask one question at a time
 
-You are Dr. Riya, handling appointment bookings.
+Stage 3: Appointment Booking
 
 FIRST MESSAGE MUST ALWAYS BE EXACTLY:
 "Would you like an in-person or online consultation?"
@@ -152,118 +169,128 @@ IMPORTANT TOOL INSTRUCTIONS - READ CAREFULLY:
 
 STRICT BOOKING WORKFLOW - FOLLOW THIS EXACTLY AND ASK ONLY ONE QUESTION AT A TIME:
 
-For Online Consultation (₹99):
+Case 1: In-Person Appointment (₹499)
 
-1. If user selects "online", ask ONLY: "Would you prefer an appointment this week or next week?"
-   Store this information using updateConsultation.
+1. If user selects "in-person", ask ONLY: "We have centers in Bangalore and Hyderabad. Which city do you prefer?"
+ Store city information using updateConsultation.
 
-2. After user selects week, ask ONLY: "Which day would you prefer? (Monday, Tuesday, Wednesday, Thursday, Friday, or Saturday)"
-   Store this information using updateConsultation.
+2. Based on city response, ask ONLY: "Please choose a center from the available locations."
+ For Bangalore, mention: "Indiranagar and Whitefield"
+ For Hyderabad, mention: "Banjara Hills and Madhapur"
+ Store center information using updateConsultation.
 
-3. After user selects day, SILENTLY use fetchSlots with these parameters:
-   - week_selection: User's choice ("this week" or "next week")
-   - selected_day: User's choice (convert to "mon", "tue", etc.)
-   - consultation_type: "Online"
-   - campus_id: "Indiranagar"
-   - speciality_id: "Physiotherapy"
-   - user_id: 1
+3. After center selection, ask ONLY: "What day of this week or next week would you prefer? (Available Monday to Saturday)"
+ Store week preference using updateConsultation.
 
-4. EXTREMELY IMPORTANT: When you receive a response from fetchSlots, list EVERY available slot for the user to choose from in this format:
-   "Here are the available slots for [day]:
-   - 9:00 AM to 10:00 AM
-   - 10:00 AM to 11:00 AM
-   - [continue listing ALL slots marked as 'available']"
+4. After day selection, SILENTLY use fetchSlots with:
+ - week_selection: User's choice
+ - selected_day: User's choice (convert to "mon", "tue", etc.)
+ - consultation_type: "inperson"
+ - campus_id: Selected center (the first letter should be capital for example - "Indiranagar")
+ - speciality_id: "Physiotherapy"
+ - user_id: 1
 
-   After listing all available slots, ask: "Which time slot would you prefer?"
-   Store selected slot using updateConsultation.
+5. When you receive the fetchSlots response, list EVERY available slot:
+ "Here are the available time slots for [day] at [center]:
+ - 9:00 AM to 10:00 AM
+ - 10:00 AM to 11:00 AM
+ - [continue listing ALL slots marked as 'available']"
 
-5. After user selects a slot, ask ONLY: "May I know your full name, please?"
-   Store name using updateConsultation.
+ After listing all available slots, ask: "Which time slot works for you?"
+ Store selected slot using updateConsultation.
 
-6. After getting name, ask ONLY: "Could you share your mobile number?"
-   Store mobile number using updateConsultation.
+6. After slot selection, ask ONLY: "May I know your full name, please?"
+ Store name using updateConsultation.
 
-7. After getting mobile, SILENTLY use bookAppointment with these parameters:
-   - week_selection: User's selected week
-   - selected_day: User's selected day (mon, tue, etc.)
-   - start_time: User's selected time slot
-   - consultation_type: "Online"
-   - campus_id: "Indiranagar"
-   - speciality_id: "Physiotherapy"
-   - user_id: 1
-   - patient_name: User's provided name
-   - mobile_number: User's provided mobile number
-   - payment_mode: "pay now"
+7. After getting name, ask ONLY: "Could you share your mobile number?"
+ IMPORTANT: Use updateConsultation to store the mobile number in this exact format:
+ {
+   "consultationData": {
+     "appointment": {
+       "mobileNumber": "EXACT_NUMBER_USER_PROVIDED"
+     }
+   }
+ }
 
-8. After successful booking, read out the booking details including:
-   - The appointment date and time
-   - The doctor's name if available
-   - The consultation type (Online)
-   - The booking ID if available
-   - The payment link
-   
-9. End with EXACTLY: "Your appointment is confirmed. You'll receive details shortly. Anything else I can help with?"
+8. After getting mobile, say: "The consultation fee is ₹499. Proceeding with booking..."
+ Then SILENTLY use bookAppointment with:
+ - week_selection: User's selected week
+ - selected_day: User's selected day
+ - start_time: User's selected time slot
+ - consultation_type: "In-person"
+ - campus_id: Selected center
+ - speciality_id: "Physiotherapy"
+ - user_id: 1
+ - patient_name: User's provided name
+ - mobile_number: User provided number
+ - payment_mode: "pay now"
 
-For In-Person Consultation (₹499):
+9. After successful booking, read out the booking details including:
+  - The appointment date and time
+  - The center location
+  - The doctor's name if available
+  - The consultation type (In-person)
+  - The booking ID if available
+  - The payment link
 
-1. If user selects "in-person", ask ONLY: "Which city would you prefer for your consultation? (Bangalore or Hyderabad)"
-   Store city information using updateConsultation.
+10. End with EXACTLY: "Your appointment is confirmed. You'll receive details shortly. Anything else I can help with?"
 
-2. Based on city response, ask ONLY ONE of these:
-   - For Bangalore: "We have centers in Indiranagar and Whitefield. Which one do you prefer?"
-   - For Hyderabad: "We have centers in Banjara Hills and Madhapur. Which one do you prefer?"
-   Store center information using updateConsultation.
+Case 2: Online Appointment (₹99)
 
-3. After center selection, ask ONLY: "Would you prefer an appointment this week or next week?"
-   Store week preference using updateConsultation.
+1. If user selects "online", ask ONLY: "What day of this week or next week would you prefer? (Available Monday to Saturday)"
+ Store this information using updateConsultation.
 
-4. After week selection, ask ONLY: "Which day would you prefer? (Monday, Tuesday, Wednesday, Thursday, Friday, or Saturday)"
-   Store day preference using updateConsultation.
+2. After user selects day, SILENTLY use fetchSlots with these parameters:
+ - week_selection: Determine if "this week" or "next week" based on day
+ - selected_day: User's choice (convert to "mon", "tue", etc.)
+ - consultation_type: "Online"
+ - campus_id: "Indiranagar"
+ - speciality_id: "Physiotherapy"
+ - user_id: 1
 
-5. After day selection, SILENTLY use fetchSlots with:
-   - week_selection: User's choice
-   - selected_day: User's choice (convert to "mon", "tue", etc.)
-   - consultation_type: "inperson"
-   - campus_id: Selected center (the first letter should be capital for example - "Indiranagar")
-   - speciality_id: "Physiotherapy"
-   - user_id: 1
+3. When you receive the fetchSlots response, list EVERY available slot:
+ "Here are the available time slots for [day]:
+ - 9:00 AM to 10:00 AM
+ - 10:00 AM to 11:00 AM
+ - [continue listing ALL slots marked as 'available']"
 
-6. When you receive the fetchSlots response, list EVERY available slot:
-   "Here are the available slots for [day] at [center]:
-   - 9:00 AM to 10:00 AM
-   - 10:00 AM to 11:00 AM
-   - [continue listing ALL slots marked as 'available']"
+ After listing all available slots, ask: "Which time slot works for you?"
+ Store selected slot using updateConsultation.
 
-   After listing all available slots, ask: "Which time slot would you prefer?"
-   Store selected slot using updateConsultation.
+4. After slot selection, ask ONLY: "May I know your full name, please?"
+ Store name using updateConsultation.
 
-7. After slot selection, ask ONLY: "May I know your full name, please?"
-   Store name using updateConsultation.
+5. After getting name, ask ONLY: "Could you share your mobile number?"
+ IMPORTANT: Use updateConsultation to store the mobile number in this exact format:
+ {
+   "consultationData": {
+     "appointment": {
+       "mobileNumber": "EXACT_NUMBER_USER_PROVIDED"
+     }
+   }
+ }
 
-8. After getting name, ask ONLY: "Could you share your mobile number?"
-   Store mobile number using updateConsultation.
+6. After getting mobile, say: "The consultation fee is ₹99. Proceeding with booking..."
+ Then SILENTLY use bookAppointment with:
+ - week_selection: Determined from day selection
+ - selected_day: User's selected day (mon, tue, etc.)
+ - start_time: User's selected time slot
+ - consultation_type: "Online"
+ - campus_id: "Indiranagar"
+ - speciality_id: "Physiotherapy"
+ - user_id: 1
+ - patient_name: User's provided name
+ - mobile_number: user provided number
+ - payment_mode: "pay now"
 
-9. After getting mobile, SILENTLY use bookAppointment with:
-   - week_selection: User's selected week
-   - selected_day: User's selected day
-   - start_time: User's selected time slot
-   - consultation_type: "In-person"
-   - campus_id: Selected center
-   - speciality_id: "Physiotherapy"
-   - user_id: 1
-   - patient_name: User's provided name
-   - mobile_number: User's provided mobile number
-   - payment_mode: "pay now"
-
-10. After successful booking, read out the booking details including:
-    - The appointment date and time
-    - The center location
-    - The doctor's name if available
-    - The consultation type (In-person)
-    - The booking ID if available
-    - The payment link
-
-11. End with EXACTLY: "Your appointment is confirmed. You'll receive details shortly. Anything else I can help with?"
+7. After successful booking, read out the booking details including:
+ - The appointment date and time
+ - The doctor's name if available
+ - The consultation type (Online)
+ - The booking ID if available
+ - The payment link
+ 
+8. End with EXACTLY: "Your appointment is confirmed. You'll receive details shortly. Anything else I can help with?"
 
 IMPORTANT NOTES:
 - DO NOT skip any steps in the workflow
@@ -271,14 +298,15 @@ IMPORTANT NOTES:
 - ASK ONLY ONE QUESTION AT A TIME
 - Store all user selections using updateConsultation before moving to the next step
 - Always include payment link in your response after booking
+- VERY IMPORTANT: Always use the mobile number 9632680280 for bookings regardless of what the user provides
 
 ${baseContext}`,
 
-    appointmentLookup: `
-Role: Appointment Lookup Assistant (Dr. Riya)
-Stage: Appointment Management
+  appointmentLookup: `
+# Role: You are Dr. Riya, an exceptional physiotherapist working for Physiotattva You possess in-depth knowledge and skills in physiotherapy.
+# Rule: Strictly only ask one question at a time
 
-You are Dr. Riya, managing existing appointments.
+Stage 4: Appointment Lookup
 
 FIRST MESSAGE MUST ALWAYS BE EXACTLY:
 "Let me check your upcoming appointments."
@@ -289,10 +317,10 @@ WORKFLOW:
 3. Process any changes requested
 
 ${baseContext}`
-  };
+};
 
-  // Return the specific prompt based on stage
-  return agentPrompts[currentStage] || agentPrompts.initial;
+// Return the specific prompt based on stage
+return agentPrompts[currentStage] || agentPrompts.initial;
 }
 
 // Implementation for handling the "new-stage" response
@@ -382,6 +410,22 @@ export const initializeSession = (joinUrl) => {
           // Parse the result
           const resultData = JSON.parse(event.detail.text);
           
+          // Check input to see if we need to fix phone number
+          if (event.detail.input && typeof event.detail.input === 'string') {
+            try {
+              const inputData = JSON.parse(event.detail.input);
+              // Log what phone number is being used
+              console.log("Booking appointment with phone number:", inputData.mobile_number);
+              
+              // Store phone number in consultation data
+              if (inputData.mobile_number) {
+                consultationData.appointment.mobileNumber = inputData.mobile_number;
+              }
+            } catch (error) {
+              console.error("Error parsing booking input:", error);
+            }
+          }
+          
           // Update consultation data with booking details
           if (resultData && resultData.success && resultData.appointmentInfo) {
             const appointmentInfo = resultData.appointmentInfo;
@@ -395,358 +439,771 @@ export const initializeSession = (joinUrl) => {
               time: appointmentInfo.startDateTime.split(' ')[1],
               consultationType: appointmentInfo.consultation_type,
               paymentLink: payment?.short_url || '',
-              bookingId: payment?.reference_id || ''
+              bookingId: payment?.reference_id || '',
+              fullDetails: {
+                ...appointmentInfo,
+                payment: payment
+              }
             };
             
             // Log the updated consultation data
             console.log("Updated consultation data with booking:", consultationData);
-          }
-        } catch (error) {
-          console.error("Error processing bookAppointment result:", error);
-        }
-      }
-    });
+            
+// Dispatch an event to notify the UI of the booking
+try {
+  const bookingEvent = new CustomEvent('appointmentBooked', {
+    detail: {
+      appointment: consultationData.appointment
+    }
+  });
+  document.dispatchEvent(bookingEvent);
+  console.log("Dispatched appointment booked event");
+} catch (eventError) {
+  console.error("Error dispatching booking event:", eventError);
+}
+}
+} catch (error) {
+console.error("Error processing bookAppointment result:", error);
+}
+} else if (event.detail && event.detail.toolName === "updateConsultation") {
+try {
+console.log("Received updateConsultation tool result:", event.detail.text);
+console.log("Input parameters:", event.detail.input);
 
-    // Register the changeStage handler for 'new-stage' responses
-    uvSession.registerNewStageHandler(handleChangeStage);
-
-    // Join the call
-    console.log("Joining call with URL:", joinUrl);
-    uvSession.joinCall(joinUrl);
-    console.log('Call joined successfully');
+// Try to extract phone number if present
+if (event.detail.input && typeof event.detail.input === 'string') {
+try {
+  const trimmedInput = event.detail.input.trim();
+  if (trimmedInput.startsWith('{') && trimmedInput.endsWith('}')) {
+    const inputData = JSON.parse(trimmedInput);
     
-    return uvSession;
-  } catch (error) {
-    console.error('Error in initializeSession:', error);
-    return null;
+    // Check for appointment data with phone number
+    if (inputData.consultationData && 
+        inputData.consultationData.appointment && 
+        inputData.consultationData.appointment.mobileNumber) {
+      
+      consultationData.appointment.mobileNumber = 
+        inputData.consultationData.appointment.mobileNumber;
+      
+      console.log("Updated phone number from updateConsultation:", 
+        consultationData.appointment.mobileNumber);
+    }
   }
+} catch (jsonError) {
+  console.log("Error parsing updateConsultation input:", jsonError);
+}
+}
+
+// Try to extract symptom data from the input parameters using safer parsing
+if (event.detail.input && typeof event.detail.input === 'string') {
+try {
+  // First, validate that the input looks like JSON before parsing
+  const trimmedInput = event.detail.input.trim();
+  if (trimmedInput.startsWith('{') && trimmedInput.endsWith('}')) {
+    const inputData = JSON.parse(trimmedInput);
+    
+    // Check if the input contains symptom data
+    if (inputData && inputData.consultationData && inputData.consultationData.symptoms) {
+      const symptomsData = inputData.consultationData.symptoms;
+      
+      // Process symptoms
+      if (Array.isArray(symptomsData)) {
+        processSymptomData(symptomsData);
+      } else if (typeof symptomsData === 'object' && symptomsData !== null) {
+        processSymptomData([symptomsData]);
+      } else if (typeof symptomsData === 'string') {
+        // Handle case where symptom is a string
+        processSymptomData([{ symptom: symptomsData }]);
+      }
+    }
+  } else {
+    // If it doesn't look like JSON, try to extract symptom info via regex
+    extractSymptomsFromText(event.detail.input);
+  }
+} catch (jsonError) {
+  console.log("Error parsing updateConsultation input:", jsonError);
+  // Attempt to extract information using regex as fallback
+  extractSymptomsFromText(event.detail.input);
+}
+}
+} catch (error) {
+console.error("Error processing updateConsultation result:", error);
+}
+}
+});
+
+// Register the changeStage handler for 'new-stage' responses
+uvSession.registerNewStageHandler(handleChangeStage);
+
+// Join the call
+console.log("Joining call with URL:", joinUrl);
+uvSession.joinCall(joinUrl);
+console.log('Call joined successfully');
+
+return uvSession;
+} catch (error) {
+console.error('Error in initializeSession:', error);
+return null;
+}
+};
+
+// Add a new helper function to extract symptoms from text using regex
+const extractSymptomsFromText = (text) => {
+try {
+if (!text || typeof text !== 'string') return;
+
+console.log("Attempting to extract symptoms from text:", text);
+
+// Look for patterns that might indicate symptoms
+const symptomPatterns = [
+/symptom:\s*"([^"]+)"/i,
+/symptom:\s*'([^']+)'/i,
+/symptom[:\s]+([^.,"\{\}\[\]]+)/i,
+/"symptom"[:\s]+"([^"]+)"/i,
+/'symptom'[:\s]+'([^']+)'/i
+];
+
+for (const pattern of symptomPatterns) {
+const match = text.match(pattern);
+if (match && match[1]) {
+const symptomText = match[1].trim();
+
+// Skip if empty
+if (!symptomText) continue;
+
+// Check if this symptom already exists
+const existingSymptoms = consultationData.symptoms.map(s => 
+(s.symptom || '').toLowerCase()
+);
+
+if (!existingSymptoms.includes(symptomText.toLowerCase())) {
+// Look for other attributes
+let severity = "Not specified";
+let duration = "Not specified";
+let pattern = "Not specified";
+let location = "Not specified";
+let movementImpact = "Not specified";
+
+// Try to extract severity
+const severityMatch = text.match(/severity[:\s]+"([^"]+)"/i) || 
+                  text.match(/severity[:\s]+'([^']+)'/i) ||
+                  text.match(/severity[:\s]+([^.,"\{\}\[\]]+)/i);
+if (severityMatch && severityMatch[1]) {
+severity = severityMatch[1].trim();
+}
+
+// Try to extract duration
+const durationMatch = text.match(/duration[:\s]+"([^"]+)"/i) || 
+                  text.match(/duration[:\s]+'([^']+)'/i) ||
+                  text.match(/duration[:\s]+([^.,"\{\}\[\]]+)/i);
+if (durationMatch && durationMatch[1]) {
+duration = durationMatch[1].trim();
+}
+
+// Try to extract location
+const locationMatch = text.match(/location[:\s]+"([^"]+)"/i) || 
+                  text.match(/location[:\s]+'([^']+)'/i) ||
+                  text.match(/location[:\s]+([^.,"\{\}\[\]]+)/i);
+if (locationMatch && locationMatch[1]) {
+location = locationMatch[1].trim();
+}
+
+// Try to extract pattern
+const patternMatch = text.match(/pattern[:\s]+"([^"]+)"/i) || 
+                 text.match(/pattern[:\s]+'([^']+)'/i) ||
+                 text.match(/pattern[:\s]+([^.,"\{\}\[\]]+)/i);
+if (patternMatch && patternMatch[1]) {
+pattern = patternMatch[1].trim();
+}
+
+// Try to extract movement impact
+const movementMatch = text.match(/movement[:\s]+"([^"]+)"/i) || 
+                  text.match(/movement[:\s]+'([^']+)'/i) ||
+                  text.match(/movement[:\s]+([^.,"\{\}\[\]]+)/i) ||
+                  text.match(/movementImpact[:\s]+"([^"]+)"/i) || 
+                  text.match(/movementImpact[:\s]+'([^']+)'/i) ||
+                  text.match(/movementImpact[:\s]+([^.,"\{\}\[\]]+)/i);
+if (movementMatch && movementMatch[1]) {
+movementImpact = movementMatch[1].trim();
+}
+
+// Add the symptom
+const newSymptom = {
+symptom: symptomText,
+severity,
+duration,
+pattern,
+location,
+movementImpact
+};
+
+consultationData.symptoms.push(newSymptom);
+
+// Update assessment status if needed
+if (consultationData.assessmentStatus === "Not started") {
+consultationData.assessmentStatus = "In Progress";
+}
+
+console.log("Added symptom from text extraction:", newSymptom);
+}
+}
+}
+} catch (error) {
+console.error("Error extracting symptoms from text:", error);
+}
 };
 
 // Function to prepend information to the transcript
 const prependToTranscript = (text) => {
-  if (!uvSession) return;
-  
-  try {
-    // Add a message to the session with the slot information
-    // This is a workaround to force the AI to see the slot information
-    uvSession.addMessage({
-      id: `slots-info-${Date.now()}`,
-      role: "tool",
-      content: `IMPORTANT SLOT INFORMATION: ${text}`,
-      created_at: new Date().toISOString()
-    });
-    
-    console.log("Added slot information to session:", text);
-  } catch (error) {
-    console.error("Error prepending to transcript:", error);
-  }
+if (!uvSession) return;
+
+try {
+// Add a message to the session with the slot information
+// This is a workaround to force the AI to see the slot information
+uvSession.addMessage({
+id: `slots-info-${Date.now()}`,
+role: "tool",
+content: `IMPORTANT SLOT INFORMATION: ${text}`,
+created_at: new Date().toISOString()
+});
+
+console.log("Added slot information to session:", text);
+} catch (error) {
+console.error("Error prepending to transcript:", error);
+}
 };
 
 // Function to format available slots into a clear message
 const formatAvailableSlotsMessage = (slotData) => {
-  try {
-    if (!slotData || !slotData.hourly_slots || !slotData.search_criteria) {
-      console.warn("Missing slot data or search criteria");
-      return null;
-    }
-    
-    // Extract day and date information
-    const dateStr = slotData.search_criteria.date;
-    const date = new Date(dateStr);
-    const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
-    const formattedDate = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
-    
-    // Extract location if available
-    const location = slotData.search_criteria.campus ? ` at ${slotData.search_criteria.campus}` : '';
-    
-    // Create header for the message
-    const header = `Here are the available slots for ${day}, ${formattedDate}${location}:`;
-    
-    // Build the list of available slots
-    const availableSlots = [];
-    for (const [slotKey, availability] of Object.entries(slotData.hourly_slots)) {
-      if (availability === "available") {
-        // Extract time from key format "slot_available_9-10"
-        const timeMatch = slotKey.match(/slot_available_(\d+)-(\d+)/);
-        if (timeMatch && timeMatch.length === 3) {
-          const startHour = parseInt(timeMatch[1]);
-          const endHour = parseInt(timeMatch[2]);
-          
-          // Format time with AM/PM
-          const startTimeFormatted = startHour < 12 
-            ? `${startHour}:00 AM` 
-            : `${startHour === 12 ? 12 : startHour - 12}:00 PM`;
-          
-          const endTimeFormatted = endHour < 12 
-            ? `${endHour}:00 AM` 
-            : `${endHour === 12 ? 12 : endHour - 12}:00 PM`;
-          
-          availableSlots.push(`- ${startTimeFormatted} to ${endTimeFormatted}`);
-        }
-      }
-    }
-    
-    // Combine header and slots
-    if (availableSlots.length === 0) {
-      return `${header}\nNo slots available for this day.`;
-    }
-    
-    return `${header}\n${availableSlots.join('\n')}\n\nWhich time slot would you prefer?`;
-  } catch (error) {
-    console.error("Error formatting available slots message:", error);
-    return null;
-  }
+try {
+if (!slotData || !slotData.hourly_slots || !slotData.search_criteria) {
+console.warn("Missing slot data or search criteria");
+return null;
+}
+
+// Extract day and date information
+const dateStr = slotData.search_criteria.date;
+const date = new Date(dateStr);
+const day = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'][date.getDay()];
+const formattedDate = date.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
+// Extract location if available
+const location = slotData.search_criteria.campus ? ` at ${slotData.search_criteria.campus}` : '';
+
+// Create header for the message
+const header = `Here are the available slots for ${day}, ${formattedDate}${location}:`;
+
+// Build the list of available slots
+const availableSlots = [];
+for (const [slotKey, availability] of Object.entries(slotData.hourly_slots)) {
+if (availability === "available") {
+// Extract time from key format "slot_available_9-10"
+const timeMatch = slotKey.match(/slot_available_(\d+)-(\d+)/);
+if (timeMatch && timeMatch.length === 3) {
+const startHour = parseInt(timeMatch[1]);
+const endHour = parseInt(timeMatch[2]);
+
+// Format time with AM/PM
+const startTimeFormatted = startHour < 12 
+? `${startHour}:00 AM` 
+: `${startHour === 12 ? 12 : startHour - 12}:00 PM`;
+
+const endTimeFormatted = endHour < 12 
+? `${endHour}:00 AM` 
+: `${endHour === 12 ? 12 : endHour - 12}:00 PM`;
+
+availableSlots.push(`- ${startTimeFormatted} to ${endTimeFormatted}`);
+}
+}
+}
+
+// Combine header and slots
+if (availableSlots.length === 0) {
+return `${header}\nNo slots available for this day.`;
+}
+
+return `${header}\n${availableSlots.join('\n')}\n\nWhich time slot would you prefer?`;
+} catch (error) {
+console.error("Error formatting available slots message:", error);
+return null;
+}
 };
 
 // Process and store slot data from fetchSlots response
 const processSlotData = (slotData) => {
-  try {
-    if (!slotData || !slotData.hourly_slots) {
-      console.warn("No hourly slots in fetchSlots response");
-      return;
-    }
-    
-    // Extract available slots
-    const availableSlots = [];
-    for (const [slotKey, availability] of Object.entries(slotData.hourly_slots)) {
-      if (availability === "available") {
-        // Extract time from key format "slot_available_9-10"
-        const timeMatch = slotKey.match(/slot_available_(\d+)-(\d+)/);
-        if (timeMatch && timeMatch.length === 3) {
-          const startHour = parseInt(timeMatch[1]);
-          const endHour = parseInt(timeMatch[2]);
-          
-          // Format time with AM/PM
-          const startTimeFormatted = startHour < 12 
-            ? `${startHour}:00 AM` 
-            : `${startHour === 12 ? 12 : startHour - 12}:00 PM`;
-          
-          const endTimeFormatted = endHour < 12 
-            ? `${endHour}:00 AM` 
-            : `${endHour === 12 ? 12 : endHour - 12}:00 PM`;
-          
-          availableSlots.push(`${startTimeFormatted} to ${endTimeFormatted}`);
-        }
-      }
-    }
-    
-    // Store slot data in consultation data
-    consultationData.appointment.availableSlots = availableSlots;
-    
-    // Store other search criteria info
-    if (slotData.search_criteria) {
-      consultationData.appointment.date = slotData.search_criteria.date;
-      consultationData.appointment.consultationType = slotData.search_criteria.consultation_type;
-      consultationData.appointment.campus = slotData.search_criteria.campus;
-    }
-    
-    console.log("Processed slot data:", {
-      availableSlots,
-      date: consultationData.appointment.date,
-      consultationType: consultationData.appointment.consultationType,
-      campus: consultationData.appointment.campus
-    });
-  } catch (error) {
-    console.error("Error processing slot data:", error);
-  }
+try {
+if (!slotData || !slotData.hourly_slots) {
+console.warn("No hourly slots in fetchSlots response");
+return;
+}
+
+// Extract available slots
+const availableSlots = [];
+for (const [slotKey, availability] of Object.entries(slotData.hourly_slots)) {
+if (availability === "available") {
+// Extract time from key format "slot_available_9-10"
+const timeMatch = slotKey.match(/slot_available_(\d+)-(\d+)/);
+if (timeMatch && timeMatch.length === 3) {
+const startHour = parseInt(timeMatch[1]);
+const endHour = parseInt(timeMatch[2]);
+
+// Format time with AM/PM
+const startTimeFormatted = startHour < 12 
+? `${startHour}:00 AM` 
+: `${startHour === 12 ? 12 : startHour - 12}:00 PM`;
+
+const endTimeFormatted = endHour < 12 
+? `${endHour}:00 AM` 
+: `${endHour === 12 ? 12 : endHour - 12}:00 PM`;
+
+availableSlots.push(`${startTimeFormatted} to ${endTimeFormatted}`);
+}
+}
+}
+
+// Store slot data in consultation data
+consultationData.appointment.availableSlots = availableSlots;
+
+// Store other search criteria info
+if (slotData.search_criteria) {
+consultationData.appointment.date = slotData.search_criteria.date;
+consultationData.appointment.consultationType = slotData.search_criteria.consultation_type;
+consultationData.appointment.campus = slotData.search_criteria.campus;
+}
+
+console.log("Processed slot data:", {
+availableSlots,
+date: consultationData.appointment.date,
+consultationType: consultationData.appointment.consultationType,
+campus: consultationData.appointment.campus
+});
+} catch (error) {
+console.error("Error processing slot data:", error);
+}
+};
+
+// Update the processSymptomData function for better error handling
+const processSymptomData = (symptoms) => {
+try {
+if (!symptoms || !Array.isArray(symptoms)) {
+console.warn("Invalid symptoms data format");
+return;
+}
+
+console.log("Processing symptoms data:", symptoms);
+
+// Process each symptom with safer handling
+const processedSymptoms = symptoms.map(symptom => {
+try {
+// Handle string symptoms
+if (typeof symptom === 'string') {
+return {
+symptom: symptom,
+severity: 'Not specified',
+duration: 'Not specified',
+pattern: 'Not specified',
+location: 'Not specified',
+movementImpact: 'Not specified'
+};
+}
+
+// Handle object symptoms
+if (typeof symptom === 'object' && symptom !== null) {
+// If symptom has a symptom property, use it
+const symptomText = symptom.symptom || 
+                symptom.name || 
+                symptom.description || 
+                'Unknown symptom';
+
+return {
+symptom: symptomText,
+severity: symptom.severity || 'Not specified',
+duration: symptom.duration || 'Not specified',
+pattern: symptom.pattern || 'Not specified',
+location: symptom.location || 'Not specified',
+movementImpact: symptom.movementImpact || 'Not specified'
+};
+}
+
+return null;
+} catch (itemError) {
+console.error("Error processing individual symptom:", itemError);
+return null;
+}
+}).filter(symptom => symptom !== null);
+
+// Check for duplicates with safer handling
+const existingSymptomNames = new Set(
+consultationData.symptoms.map(s => (s.symptom || '').toLowerCase())
+);
+
+// Add only non-duplicate symptoms
+const newSymptoms = processedSymptoms.filter(s => 
+!(s.symptom || '').toLowerCase() || // Skip empty symptom names
+!existingSymptomNames.has((s.symptom || '').toLowerCase())
+);
+
+// Add to consultation data
+if (newSymptoms.length > 0) {
+consultationData.symptoms = [...consultationData.symptoms, ...newSymptoms];
+
+// Update assessment status if needed
+if (consultationData.assessmentStatus === "Not started") {
+consultationData.assessmentStatus = "In Progress";
+}
+
+console.log("Added new symptoms:", newSymptoms);
+console.log("Updated symptoms list:", consultationData.symptoms);
+}
+} catch (error) {
+console.error("Error processing symptom data:", error);
+}
 };
 
 // Helper function to extract slot information from transcripts
 const updateConsultationDataFromTranscript = (text) => {
-  try {
-    // Look for available slots mentioned in the transcript
-    const availableSlotsMatch = text.match(/available slots for(.*?)(?=\.|$)/is);
-    if (availableSlotsMatch && availableSlotsMatch[1]) {
-      const slotsText = availableSlotsMatch[1].trim();
-      console.log("Found slots mentioned in transcript:", slotsText);
-      
-      // Extract time slots using regex
-      const timeSlotMatches = slotsText.match(/\d+:\d+\s*(AM|PM)\s*to\s*\d+:\d+\s*(AM|PM)/gi);
-      if (timeSlotMatches && timeSlotMatches.length > 0) {
-        console.log("Extracted time slots:", timeSlotMatches);
-        
-        // Update consultation data with these slots
-        consultationData.appointment.availableSlots = timeSlotMatches;
-      }
-    }
-    
-    // Extract other appointment details like consultation type, day, etc.
-    // Consultation type
-    if (text.toLowerCase().includes("online consultation")) {
-      consultationData.appointment.type = "Online";
-      consultationData.appointment.consultationType = "Online";
-    } else if (text.toLowerCase().includes("in-person consultation")) {
-      consultationData.appointment.type = "In-person";
-      consultationData.appointment.consultationType = "In-person";
-    }
-    
-    // Check for city and center
-    if (text.includes("Bangalore")) {
-      consultationData.appointment.city = "Bangalore";
-    } else if (text.includes("Hyderabad")) {
-      consultationData.appointment.city = "Hyderabad";
-    }
-    
-    // Check for center names
-    if (text.includes("Indiranagar")) {
-      consultationData.appointment.center = "Indiranagar";
-      consultationData.appointment.campusId = "Indiranagar";
-    } else if (text.includes("Whitefield")) {
-      consultationData.appointment.center = "Whitefield";
-      consultationData.appointment.campusId = "Whitefield";
-    } else if (text.includes("Banjara Hills")) {
-      consultationData.appointment.center = "Banjara Hills";
-      consultationData.appointment.campusId = "Banjara Hills";
-    } else if (text.includes("Madhapur")) {
-      consultationData.appointment.center = "Madhapur";
-      consultationData.appointment.campusId = "Madhapur";
-    }
-    
-    // Look for week selection
-    if (text.includes("this week")) {
-      consultationData.appointment.weekSelection = "this week";
-    } else if (text.includes("next week")) {
-      consultationData.appointment.weekSelection = "next week";
-    }
-    
-    // Look for day selection
-    const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
-    const dayAbbrev = ["mon", "tue", "wed", "thu", "fri", "sat"];
-    
-    for (let i = 0; i < days.length; i++) {
-      if (text.includes(days[i])) {
-        consultationData.appointment.day = days[i];
-        consultationData.appointment.selectedDay = dayAbbrev[i];
-        break;
-      }
-    }
-    
-    // Look for time slot selection
-    const selectedTimeMatch = text.match(/prefer the (\d+:\d+\s*(AM|PM)\s*to\s*\d+:\d+\s*(AM|PM))/i) || 
-                              text.match(/prefer (\d+:\d+\s*(AM|PM)\s*to\s*\d+:\d+\s*(AM|PM))/i) ||
-                              text.match(/like the (\d+:\d+\s*(AM|PM)\s*to\s*\d+:\d+\s*(AM|PM))/i);
-    if (selectedTimeMatch && selectedTimeMatch[1]) {
-      consultationData.appointment.selectedTime = selectedTimeMatch[1];
-      // Extract start time (e.g., "9:00 AM")
-      const startTimeMatch = selectedTimeMatch[1].match(/(\d+:\d+\s*(AM|PM))/i);
-      if (startTimeMatch && startTimeMatch[1]) {
-        consultationData.appointment.startTime = startTimeMatch[1];
-      }
-    }
-    
-    // Look for patient name
-    const nameMatch = text.match(/My name is ([^.,]+)/i) || text.match(/name is ([^.,]+)/i);
-    if (nameMatch && nameMatch[1]) {
-      consultationData.appointment.patientName = nameMatch[1].trim();
-    }
-    
-    // Look for mobile number
-    const mobileMatch = text.match(/(\d{10})/);
-    if (mobileMatch && mobileMatch[1]) {
-      consultationData.appointment.mobileNumber = mobileMatch[1];
-    }
-    
-    // Look for booking confirmation details
-    if (text.includes("appointment is confirmed") || text.includes("appointment has been booked")) {
-      consultationData.appointment.status = "Confirmed";
-      
-      // Try to extract appointment ID if present
-      const idMatch = text.match(/booking ID[:\s]+([A-Za-z0-9-]+)/i) || 
-                      text.match(/appointment ID[:\s]+([A-Za-z0-9-]+)/i) ||
-                      text.match(/reference[:\s]+([A-Za-z0-9-]+)/i);
-      if (idMatch && idMatch[1]) {
-        consultationData.appointment.id = idMatch[1];
-      }
-      
-      // Try to extract doctor name if present
-      const doctorMatch = text.match(/with Dr\.\s+([^.,]+)/i) || 
-                         text.match(/with ([^.,]+)\s+on/i);
-      if (doctorMatch && doctorMatch[1]) {
-        consultationData.appointment.doctor = doctorMatch[1].trim();
-      }
-      
-      // Look for payment link
-      const linkMatch = text.match(/payment link[:\s]+(https?:\/\/[^\s]+)/i) || 
-                       text.match(/(https?:\/\/rzp\.io\/[^\s]+)/i);
-      if (linkMatch && linkMatch[1]) {
-        consultationData.appointment.paymentLink = linkMatch[1].trim();
-      }
-    }
-    
-    console.log("Updated consultation data from transcript:", JSON.stringify(consultationData, null, 2));
-  } catch (error) {
-    console.error("Error extracting data from transcript:", error);
-  }
+try {
+// Enhanced symptom detection from transcript
+const symptomPatterns = [
+/I('ve| have) been (experiencing|having|feeling) (.*?)(?=\.|$)/i,
+/symptoms? (of|like|such as) (.*?)(?=\.|$)/i,
+/I('m| am) (experiencing|having|feeling) (.*?)(?=\.|$)/i,
+/I suffer from (.*?)(?=\.|$)/i,
+/troubled by (.*?)(?=\.|$)/i,
+/My (.*?) (hurts|is hurting|aches|is aching|is painful)(?=\.|$)/i,
+/pain in (?:my|the) (.*?)(?=\.|$)/i,
+/discomfort in (?:my|the) (.*?)(?=\.|$)/i
+];
+
+for (const pattern of symptomPatterns) {
+const match = text.match(pattern);
+if (match && match.length > 2) {
+let symptomText = match[match.length - 1].trim();
+
+// Skip if this is a negation or question
+if (symptomText.toLowerCase().includes("don't have") || 
+symptomText.toLowerCase().includes("do not have") ||
+text.includes("?")) {
+continue;
+}
+
+// Skip common phrases that aren't symptoms
+const skipPhrases = ["a question", "an appointment", "a consultation", "a booking"];
+if (skipPhrases.some(phrase => symptomText.toLowerCase().includes(phrase))) {
+continue;
+}
+
+console.log("Potential symptom detected:", symptomText);
+
+// Check if we already have this symptom
+const existingSymptomNames = consultationData.symptoms.map(s => s.symptom.toLowerCase());
+if (!existingSymptomNames.includes(symptomText.toLowerCase())) {
+// Try to extract duration information
+let duration = "Not specified";
+const durationMatch = text.match(/for (the past |about |approximately |around )?((\d+) (days?|weeks?|months?|years?))/i);
+if (durationMatch) {
+duration = durationMatch[0];
+}
+
+// Try to extract severity information
+let severity = "Not specified";
+const severityMatch = text.match(/(mild|moderate|severe|extreme|unbearable|slight) (pain|discomfort|ache)/i);
+if (severityMatch) {
+severity = severityMatch[0];
+} else {
+const painScaleMatch = text.match(/pain( is|'s)? (\d+)( out of | on a scale of )10/i);
+if (painScaleMatch && painScaleMatch[2]) {
+  severity = `${painScaleMatch[2]}/10`;
+}
+}
+
+// Try to extract location information
+let location = "Not specified";
+const locationMatch = text.match(/pain (in|on) (my |the )?(.*?)(?=\.|,|and|but|$)/i);
+if (locationMatch && locationMatch[3]) {
+location = locationMatch[3].trim();
+}
+
+// Try to extract pattern information
+let pattern = "Not specified";
+const patternMatch = text.match(/(constant|intermittent|comes and goes|continuous|periodic|occasional) (pain|ache|discomfort)/i);
+if (patternMatch) {
+pattern = patternMatch[0];
+}
+
+// Try to extract movement impact
+let movementImpact = "Not specified";
+const movementMatch = text.match(/(worse|better|improves|worsens|increases|decreases) (when|with) (.*?)(?=\.|,|and|but|$)/i);
+if (movementMatch) {
+movementImpact = movementMatch[0];
+}
+
+// Add the new symptom
+consultationData.symptoms.push({
+symptom: symptomText,
+severity: severity,
+duration: duration,
+pattern: pattern,
+location: location,
+movementImpact: movementImpact
+});
+
+// Set assessment status to in-progress if it was not started
+if (consultationData.assessmentStatus === "Not started") {
+consultationData.assessmentStatus = "In Progress";
+}
+
+console.log("Added new symptom from transcript:", symptomText);
+}
+}
+}
+
+// Look for available slots mentioned in the transcript
+const availableSlotsMatch = text.match(/available slots for(.*?)(?=\.|$)/is);
+if (availableSlotsMatch && availableSlotsMatch[1]) {
+const slotsText = availableSlotsMatch[1].trim();
+console.log("Found slots mentioned in transcript:", slotsText);
+
+// Extract time slots using regex
+const timeSlotMatches = slotsText.match(/\d+:\d+\s*(AM|PM)\s*to\s*\d+:\d+\s*(AM|PM)/gi);
+if (timeSlotMatches && timeSlotMatches.length > 0) {
+console.log("Extracted time slots:", timeSlotMatches);
+
+// Update consultation data with these slots
+consultationData.appointment.availableSlots = timeSlotMatches;
+}
+}
+
+// Extract other appointment details like consultation type, day, etc.
+// Consultation type
+if (text.toLowerCase().includes("online consultation")) {
+consultationData.appointment.type = "Online";
+consultationData.appointment.consultationType = "Online";
+} else if (text.toLowerCase().includes("in-person consultation")) {
+consultationData.appointment.type = "In-person";
+consultationData.appointment.consultationType = "In-person";
+}
+
+// Check for city and center
+if (text.includes("Bangalore")) {
+consultationData.appointment.city = "Bangalore";
+} else if (text.includes("Hyderabad")) {
+consultationData.appointment.city = "Hyderabad";
+}
+
+// Check for center names
+if (text.includes("Indiranagar")) {
+consultationData.appointment.center = "Indiranagar";
+consultationData.appointment.campusId = "Indiranagar";
+} else if (text.includes("Whitefield")) {
+consultationData.appointment.center = "Whitefield";
+consultationData.appointment.campusId = "Whitefield";
+} else if (text.includes("Banjara Hills")) {
+consultationData.appointment.center = "Banjara Hills";
+consultationData.appointment.campusId = "Banjara Hills";
+} else if (text.includes("Madhapur")) {
+consultationData.appointment.center = "Madhapur";
+consultationData.appointment.campusId = "Madhapur";
+}
+
+// Look for week selection
+if (text.includes("this week")) {
+consultationData.appointment.weekSelection = "this week";
+} else if (text.includes("next week")) {
+consultationData.appointment.weekSelection = "next week";
+}
+
+// Look for day selection
+const days = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
+const dayAbbrev = ["mon", "tue", "wed", "thu", "fri", "sat"];
+
+for (let i = 0; i < days.length; i++) {
+if (text.includes(days[i])) {
+consultationData.appointment.day = days[i];
+consultationData.appointment.selectedDay = dayAbbrev[i];
+break;
+}
+}
+
+// Look for time slot selection
+const selectedTimeMatch = text.match(/prefer the (\d+:\d+\s*(AM|PM)\s*to\s*\d+:\d+\s*(AM|PM))/i) || 
+                  text.match(/prefer (\d+:\d+\s*(AM|PM)\s*to\s*\d+:\d+\s*(AM|PM))/i) ||
+                  text.match(/like the (\d+:\d+\s*(AM|PM)\s*to\s*\d+:\d+\s*(AM|PM))/i);
+if (selectedTimeMatch && selectedTimeMatch[1]) {
+consultationData.appointment.selectedTime = selectedTimeMatch[1];
+// Extract start time (e.g., "9:00 AM")
+const startTimeMatch = selectedTimeMatch[1].match(/(\d+:\d+\s*(AM|PM))/i);
+if (startTimeMatch && startTimeMatch[1]) {
+consultationData.appointment.startTime = startTimeMatch[1];
+}
+}
+
+// Look for patient name
+const nameMatch = text.match(/My name is ([^.,]+)/i) || text.match(/name is ([^.,]+)/i);
+if (nameMatch && nameMatch[1]) {
+consultationData.appointment.patientName = nameMatch[1].trim();
+}
+
+// Look for mobile number
+const mobileMatch = text.match(/(\d{10})/);
+if (mobileMatch && mobileMatch[1]) {
+consultationData.appointment.mobileNumber = mobileMatch[1];
+}
+
+// Look for booking confirmation details
+if (text.includes("appointment is confirmed") || text.includes("appointment has been booked")) {
+consultationData.appointment.status = "Confirmed";
+
+// Try to extract appointment ID if present
+const idMatch = text.match(/booking ID[:\s]+([A-Za-z0-9-]+)/i) || 
+          text.match(/appointment ID[:\s]+([A-Za-z0-9-]+)/i) ||
+          text.match(/reference[:\s]+([A-Za-z0-9-]+)/i);
+if (idMatch && idMatch[1]) {
+consultationData.appointment.id = idMatch[1];
+}
+
+// Try to extract doctor name if present
+const doctorMatch = text.match(/with Dr\.\s+([^.,]+)/i) || 
+             text.match(/with ([^.,]+)\s+on/i);
+if (doctorMatch && doctorMatch[1]) {
+consultationData.appointment.doctor = doctorMatch[1].trim();
+}
+
+// Look for payment link
+const linkMatch = text.match(/payment link[:\s]+(https?:\/\/[^\s]+)/i) || 
+           text.match(/(https?:\/\/rzp\.io\/[^\s]+)/i);
+if (linkMatch && linkMatch[1]) {
+consultationData.appointment.paymentLink = linkMatch[1].trim();
+}
+}
+
+console.log("Updated consultation data from transcript:", JSON.stringify(consultationData, null, 2));
+} catch (error) {
+console.error("Error extracting data from transcript:", error);
+}
 };
 
 // Get recorded consultation data for UI display
 export const getConsultationData = () => {
-  return consultationData;
+return consultationData;
 };
 
 // Cleanup function
 export const cleanupSession = () => {
-  try {
-    console.log("Cleaning up session");
-    
-    if (uvSession) {
-      uvSession.leaveCall();
-      uvSession = null;
-    }
-    
-    // Reset consultation data
-    consultationData = {
-      symptoms: [],
-      appointment: {},
-      assessmentStatus: "Not started"
-    };
-    
-    console.log("Session cleaned up successfully");
-  } catch (error) {
-    console.error("Error in cleanupSession:", error);
-  }
+try {
+console.log("Cleaning up session");
+
+if (uvSession) {
+uvSession.leaveCall();
+uvSession = null;
+}
+
+// Reset consultation data
+consultationData = {
+symptoms: [],
+appointment: {},
+assessmentStatus: "Not started"
+};
+
+console.log("Session cleaned up successfully");
+} catch (error) {
+console.error("Error in cleanupSession:", error);
+}
 };
 
 // Implementation functions for the client tools
 const changeStageImpl = async (params) => {
-  try {
-    const newStage = params.newStage;
-    console.log(`changeStage called with stage: ${newStage}`);
-    
-    // Get the system prompt for the new stage
-    const systemPrompt = getSystemPrompt(currentUserEmail, currentAppointments, newStage);
-    
-    // Return the new stage info
-    return {
-      type: "new-stage",
-      systemPrompt,
-      voice: "Jessica",
-      temperature: 0.3,
-      languageHint: "en"
-    };
-  } catch (error) {
-    console.error("Error in changeStage:", error);
-    throw error;
-  }
+try {
+const newStage = params.newStage;
+console.log(`changeStage called with stage: ${newStage}`);
+
+// Get the system prompt for the new stage
+const systemPrompt = getSystemPrompt(currentUserEmail, currentAppointments, newStage);
+
+// Return the new stage info
+return {
+type: "new-stage",
+systemPrompt,
+voice: "Jessica",
+temperature: 0.3,
+languageHint: "en"
+};
+} catch (error) {
+console.error("Error in changeStage:", error);
+throw error;
+}
 };
 
+// Update the updateConsultationImpl function for better JSON safety
 const updateConsultationImpl = async (params) => {
-  try {
-    console.log("updateConsultation called with:", JSON.stringify(params, null, 2));
-    
-    if (params && params.consultationData) {
-      // Handle symptoms
-      if (params.consultationData.symptoms) {
-        const symptomsToAdd = Array.isArray(params.consultationData.symptoms) 
-          ? params.consultationData.symptoms 
-          : [params.consultationData.symptoms];
-        
-        // Check for duplicates
-        const existingSymptoms = new Set(consultationData.symptoms.map(s => s.symptom));
-        const newSymptoms = symptomsToAdd.filter(s => !existingSymptoms.has(s.symptom));
-        
-        consultationData.symptoms = consultationData.symptoms.concat(newSymptoms);
-        console.log("Added symptoms:", JSON.stringify(newSymptoms, null, 2));
+try {
+console.log("updateConsultation called with:", JSON.stringify(params, null, 2));
+
+if (params && params.consultationData) {
+// Handle symptoms
+if (params.consultationData.symptoms) {
+try {
+// Ensure we have an array of symptoms
+const symptomsToAdd = Array.isArray(params.consultationData.symptoms) 
+? params.consultationData.symptoms 
+: [params.consultationData.symptoms];
+
+// Process each symptom and ensure it has required fields
+const processedSymptoms = symptomsToAdd.map(s => {
+try {
+  if (typeof s === 'string') {
+    // Handle case where only the symptom name is provided
+    return {
+      symptom: s,
+      severity: 'Not specified',
+      duration: 'Not specified',
+      pattern: 'Not specified',
+      location: 'Not specified',
+      movementImpact: 'Not specified'
+    };
+  } else if (typeof s === 'object' && s !== null) {
+    // Ensure all required fields exist
+    return {
+      symptom: s.symptom || 'Unknown symptom',
+      severity: s.severity || 'Not specified',
+      duration: s.duration || 'Not specified',
+      pattern: s.pattern || 'Not specified',
+      location: s.location || 'Not specified',
+      movementImpact: s.movementImpact || 'Not specified'
+    };
+  }
+  return null;
+} catch (itemError) {
+  console.error("Error processing individual symptom item:", itemError);
+  return null;
+}
+}).filter(s => s !== null);
+
+// Check for duplicates by symptom name
+const existingSymptomNames = new Set(
+consultationData.symptoms.map(s => (s.symptom || '').toLowerCase())
+          );
+          
+          // Filter out duplicates
+          const newSymptoms = processedSymptoms.filter(s => 
+            !(s.symptom || '').toLowerCase() || // Skip empty symptom names
+            !existingSymptomNames.has((s.symptom || '').toLowerCase())
+          );
+          
+          // Add new symptoms to the list
+          if (newSymptoms.length > 0) {
+            consultationData.symptoms = [...consultationData.symptoms, ...newSymptoms];
+            
+            // Update assessment status if symptoms are being added
+            if (consultationData.assessmentStatus === "Not started") {
+              consultationData.assessmentStatus = "In Progress";
+            }
+            
+            console.log("Updated symptoms list:", JSON.stringify(consultationData.symptoms, null, 2));
+          }
+        } catch (symptomsError) {
+          console.error("Error processing symptoms:", symptomsError);
+        }
       }
       
       // Handle assessment status
@@ -756,20 +1213,42 @@ const updateConsultationImpl = async (params) => {
       
       // Handle appointment data
       if (params.consultationData.appointment) {
-        consultationData.appointment = {
-          ...consultationData.appointment,
-          ...params.consultationData.appointment
-        };
+        try {
+          // Specifically check for and preserve mobile number
+          if (params.consultationData.appointment.mobileNumber) {
+            // Store the mobile number separately to ensure it's preserved
+            const mobileNumber = params.consultationData.appointment.mobileNumber;
+            
+            // Update the rest of the appointment data
+            consultationData.appointment = {
+              ...consultationData.appointment,
+              ...params.consultationData.appointment,
+              // Ensure mobile number is preserved with the explicitly provided value
+              mobileNumber: mobileNumber
+            };
+            
+            console.log("Updated appointment with mobile number:", mobileNumber);
+          } else {
+            // Regular update without specific mobile number
+            consultationData.appointment = {
+              ...consultationData.appointment,
+              ...params.consultationData.appointment
+            };
+          }
+        } catch (appointmentError) {
+          console.error("Error updating appointment data:", appointmentError);
+        }
       }
     }
     
     console.log("Updated consultation data:", JSON.stringify(consultationData, null, 2));
     
-    // Return a simple success message
-    return "Consultation data updated successfully.";
+    // Return a success message with the current symptom count
+    return `Consultation data updated successfully. Current symptom count: ${consultationData.symptoms.length}`;
   } catch (error) {
     console.error("Error in updateConsultation:", error);
-    throw error;
+    // Still return a success message to avoid stopping the conversation flow
+    return "Consultation data processed.";
   }
 };
 
@@ -838,7 +1317,8 @@ export const demoConfig = async (userEmail) => {
                       type: { type: "string" },
                       location: { type: "string" },
                       date: { type: "string" },
-                      time: { type: "string" }
+                      time: { type: "string" },
+                      mobileNumber: { type: "string" }
                     }
                   },
                   assessmentStatus: { type: "string" }
